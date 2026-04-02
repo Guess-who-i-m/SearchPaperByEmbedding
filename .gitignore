@@ -2,4 +2,4 @@ papers/*
 .env
 *.npy
 __pycache__/*
-result.json
+results.json
