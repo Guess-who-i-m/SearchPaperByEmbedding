@@ -4,16 +4,19 @@ import os
 import hashlib
 from pathlib import Path
 from sklearn.metrics.pairwise import cosine_similarity
+from dotenv import load_dotenv  # 引入 dotenv
+
+# 加载 .env 文件中的环境变量
+load_dotenv()
 
 class PaperSearcher:
     def __init__(self, papers_file, model_type="openai", api_key=None, base_url=None):
         with open(papers_file, 'r', encoding='utf-8') as f:
             self.papers = json.load(f)
-        
+
         self.model_type = model_type
-        self.cache_file = self._get_cache_file(papers_file, model_type)
         self.embeddings = None
-        
+
         if model_type == "openai":
             from openai import OpenAI
             self.client = OpenAI(
@@ -21,17 +24,37 @@ class PaperSearcher:
                 base_url=base_url
             )
             self.model_name = "text-embedding-3-large"
+        elif model_type == "qwen":
+
+            from openai import OpenAI
+            self.client = OpenAI(
+                # 若没有配置环境变量，请用阿里云百炼API Key将下行替换为：api_key="sk-xxx",
+                # 各地域的API Key不同。获取API Key：https://help.aliyun.com/zh/model-studio/get-api-key
+                api_key=os.getenv("DASHSCOPE_API_KEY"),
+                # 以下是北京地域base-url，如果使用新加坡地域的模型，需要将base_url替换为：https://dashscope-intl.aliyuncs.com/compatible-mode/v1
+                base_url="https://dashscope.aliyuncs.com/compatible-mode/v1"
+            )
+            self.model_name="text-embedding-v4"
         else:
             from sentence_transformers import SentenceTransformer
-            self.model = SentenceTransformer('all-MiniLM-L6-v2')
-            self.model_name = "all-MiniLM-L6-v2"
-        
+            # self.model = SentenceTransformer('/mnt/home/user37/KunbinXu/model/all-MiniLM-L6-v2')
+            # self.model_name = "all-MiniLM-L6-v2"
+            LOCAL_MODEL=os.getenv("LOCAL_MODEL")
+            LOCAL_MODEL_NAME=os.getenv("LOCAL_MODEL_NAME")
+
+            self.model = SentenceTransformer(LOCAL_MODEL)
+            self.model_name = LOCAL_MODEL_NAME
+
+        # Set cache file after model_name is determined
+        self.cache_file = self._get_cache_file(papers_file, model_type)
         self._load_cache()
     
     def _get_cache_file(self, papers_file, model_type):
         base_name = Path(papers_file).stem
         file_hash = hashlib.md5(papers_file.encode()).hexdigest()[:8]
-        cache_name = f"cache_{base_name}_{file_hash}_{model_type}.npy"
+        # Include model name in cache to avoid dimension mismatch
+        model_id = self.model_name.replace('/', '_') if hasattr(self, 'model_name') else model_type
+        cache_name = f"cache_{base_name}_{file_hash}_{model_id}.npy"
         return str(Path(papers_file).parent / cache_name)
     
     def _load_cache(self):
@@ -75,6 +98,20 @@ class PaperSearcher:
         
         return np.array(embeddings)
     
+    def _embed_qwen(self, texts):
+        if isinstance(texts, str):
+            texts = [texts]
+
+        embeddings = []
+        batch_size = 10  # Qwen API limit
+
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i:i + batch_size]
+            response = self.client.embeddings.create(input=batch, model=self.model_name)
+            embeddings.extend([item.embedding for item in response.data])
+
+        return np.array(embeddings)
+    
     def _embed_local(self, texts):
         if isinstance(texts, str):
             texts = [texts]
@@ -90,6 +127,8 @@ class PaperSearcher:
         
         if self.model_type == "openai":
             self.embeddings = self._embed_openai(texts)
+        elif self.model_type == "qwen":
+            self.embeddings = self._embed_qwen(texts)
         else:
             self.embeddings = self._embed_local(texts)
         
@@ -111,6 +150,8 @@ class PaperSearcher:
             
             if self.model_type == "openai":
                 embs = self._embed_openai(texts)
+            elif self.model_type == "qwen":
+                embs = self._embed_qwen(texts)
             else:
                 embs = self._embed_local(texts)
             
@@ -119,6 +160,8 @@ class PaperSearcher:
         elif query:
             if self.model_type == "openai":
                 query_emb = self._embed_openai(query).reshape(1, -1)
+            elif self.model_type == "qwen":
+                query_emb = self._embed_qwen(query).reshape(1, -1)
             else:
                 query_emb = self._embed_local(query).reshape(1, -1)
         else:
