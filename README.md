@@ -15,6 +15,18 @@ Find similar papers using semantic search. Supports both local models (free) and
 pip install -r requirements.txt
 ```
 
+### 0. env setting
+
+Create a .env file and add items below
+
+```bash
+DASHSCOPE_API_KEY=your_dashscope_api_key
+YOUR_EMAIL=your_openreviews_email
+YOUR_PASSWORD=your_openreviews_password
+LOCAL_MODEL=your_local_model_path           # e.g. /path/to/Qwen3-Embedding-8B
+LOCAL_MODEL_NAME=your_local_model_name      # e.g. Qwen3-Embedding-8B Qwen3-Embedding-0.6B and all-MiniLM-L6-v2...
+```
+
 ### 1. Prepare Papers
 
 ```python
